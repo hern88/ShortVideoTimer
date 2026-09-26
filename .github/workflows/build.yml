@@ -1,0 +1,67 @@
+name: 编译 APK
+
+# 什么时候自动编译：
+#   1. 每次你把代码 push 到 main 或 master 分支
+#   2. 你在 GitHub 网页上手动点按钮触发（workflow_dispatch）
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 发布 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. 把仓库里的代码拉下来
+        uses: actions/checkout@v4
+
+      - name: 2. 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 3. 安装 Gradle 8.4
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
+          # 本项目没有 gradle-wrapper.jar，跳过 wrapper 校验
+          validate-wrappers: false
+
+      - name: 4. 编译 Debug 安装包
+        run: gradle assembleDebug --no-daemon
+
+      - name: 5. 上传 APK 到本次构建记录
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShortVideoTimer-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: 6. 发布到 Releases（手机可以直接下载，不用登录）
+        # 就算这一步失败（比如第一次还没有 tag），也不要让整个构建变红
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: 最新安装包
+          body: 云端自动编译出来的最新 Debug 安装包，直接下载安装即可。
+          prerelease: true
+          files: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: 7. 在构建摘要里写上手机下载地址
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## 📱 编译成功，用手机下载安装
+
+          用**手机浏览器**打开下面这个链接，直接就能下载 APK：
+
+          https://github.com/${{ github.repository }}/releases/download/latest-apk/app-debug.apk
+
+          > 如果上面的链接暂时打不开（第一次编译时比较常见），可以到本次构建页面
+          > 最下方的 Artifacts 里下载 zip，解压后就是 APK。
+          EOF

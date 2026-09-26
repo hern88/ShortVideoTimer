@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        读取"使用情况统计"的特殊权限。
+        它是 signature|privileged 级别，不能用弹窗申请，
+        必须让用户去「设置 → 特殊应用权限 → 使用情况访问」里手动打开。
+        tools:ignore 只是让 IDE 别为此报警告。
+    -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!--
+        Android 11+ 的"包可见性"限制：不声明的话，
+        代码里查不到这些 App 的信息（图标、名称等）。
+        这里只声明我们要统计的短视频 App，不去申请 QUERY_ALL_PACKAGES
+        （那个权限审核很严，而且没必要）。
+    -->
+    <queries>
+        <package android:name="com.ss.android.ugc.aweme" />
+        <package android:name="com.ss.android.ugc.aweme.lite" />
+        <package android:name="com.smile.gifmaker" />
+        <package android:name="com.kuaishou.nebula" />
+        <package android:name="com.tencent.weishi" />
+        <package android:name="com.xingin.xhs" />
+        <package android:name="tv.danmaku.bili" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.instagram.android" />
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ShortVideoTimer">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

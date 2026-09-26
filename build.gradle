@@ -1,0 +1,4 @@
+// 整个项目的构建配置。单个模块（app）的配置在 app/build.gradle 里。
+plugins {
+    id 'com.android.application' version '8.2.2' apply false
+}

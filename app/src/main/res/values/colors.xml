@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    整个 App 的配色都在这里。
+    想换主题色，只改 brand 和 brand_dark 两行就够了。
+-->
+<resources>
+    <!-- 品牌色：主按钮、图标背景、强调元素 -->
+    <color name="brand">#FF3B6B</color>
+    <color name="brand_dark">#E01E4E</color>
+
+    <!-- 背景 -->
+    <color name="bg">#F5F6FA</color>
+    <color name="white">#FFFFFF</color>
+
+    <!-- 文字 -->
+    <color name="text_primary">#11131A</color>
+    <color name="text_secondary">#7A8194</color>
+
+    <!-- 卡片描边 -->
+    <color name="card_stroke">#E8EAF1</color>
+
+    <!-- 权限引导提示框的背景（浅粉） -->
+    <color name="hint_bg">#FFF0F4</color>
+</resources>

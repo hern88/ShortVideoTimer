@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App 图标的前景层：一个白色的「播放」三角形 + 外圈 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 外圈圆环 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,26 A28,28 0 1,1 54,82 A28,28 0 1,1 54,26 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5" />
+
+    <!-- 中间的播放三角 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,40 L46,68 L69,54 Z" />
+</vector>

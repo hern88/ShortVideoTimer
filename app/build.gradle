@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.shortvideotimer'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.shortvideotimer"
+        minSdk 26            // Android 8.0 及以上（2017 年之后的手机基本都行）
+        targetSdk 34
+        versionCode 1
+        versionName "0.1-mvp"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 云端编译时不让 lint 的小警告中断构建
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+}

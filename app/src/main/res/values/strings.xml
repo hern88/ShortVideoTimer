@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">短视频时长</string>
+
+    <string name="label_today">今日短视频总时长</string>
+    <string name="label_detail">各应用明细</string>
+
+    <string name="btn_grant">去开启使用情况权限</string>
+    <string name="btn_refresh">刷新</string>
+
+    <string name="placeholder_dash">--</string>
+    <string name="placeholder_loading">正在统计…</string>
+
+    <string name="detail_no_permission">打开权限后，这里会显示每个 App 分别用了多久</string>
+    <string name="detail_no_usage">今天一次都没打开，很棒 🎉</string>
+
+    <string name="hint_need_permission">安卓不允许 App 自己读取别人的使用记录，需要你手动开一个开关：\n\n① 点下面的按钮进入系统设置\n② 在列表里找到「短视频时长」\n③ 把右边的开关打开\n④ 按返回键回到本页</string>
+</resources>
