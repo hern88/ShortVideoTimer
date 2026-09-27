@@ -34,7 +34,18 @@ jobs:
           validate-wrappers: false
 
       - name: 4. 编译 Debug 安装包
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee build.log
+
+      # 编译失败时，把真正的报错内容写成一条错误提示。
+      # 这样不用登录也能通过 GitHub API 读到错误详情，方便远程排错。
+      - name: 4b. 编译失败时上报具体错误
+        if: failure()
+        run: |
+          ERR=$(grep -E "error:|错误:|FAILURE:|Execution failed" build.log | head -20 | tr '\n' '|')
+          if [ -z "$ERR" ]; then ERR="未匹配到关键字，请查看完整日志"; fi
+          echo "::error title=编译错误::$ERR"
 
       - name: 5. 上传 APK 到本次构建记录
         uses: actions/upload-artifact@v4

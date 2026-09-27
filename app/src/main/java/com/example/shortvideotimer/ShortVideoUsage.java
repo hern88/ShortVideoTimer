@@ -78,6 +78,7 @@ public final class ShortVideoUsage {
             this.foregroundMs = foregroundMs;
         }
     }
+
     /** 一次查询的完整结果：给用户看的时长 + 给开发者看的诊断信息 */
     public static class Result {
         public final List<Item> items;
@@ -90,6 +91,7 @@ public final class ShortVideoUsage {
             this.debug = debug;
         }
     }
+
     /** 把包名翻译成中文名；没登记过的就直接显示包名 */
     public static String displayName(String packageName) {
         String name = APPS.get(packageName);
@@ -120,11 +122,6 @@ public final class ShortVideoUsage {
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
         return calendar.getTimeInMillis();
-    }
-
-    /** 统计今天 0 点到现在 */
-    public static List<Item> queryToday(Context context) {
-        return query(context, todayStart(), System.currentTimeMillis());
     }
 
     /** 统计今天 0 点到现在 */

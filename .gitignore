@@ -11,3 +11,6 @@
 local.properties
 *.apk
 !gradle/wrapper/gradle-wrapper.jar
+
+# 云端编译时用来抓取报错的日志文件
+build.log
