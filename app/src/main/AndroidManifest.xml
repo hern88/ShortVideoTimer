@@ -30,6 +30,8 @@
         <package android:name="com.ss.android.ugc.trill" />
         <package android:name="com.google.android.youtube" />
         <package android:name="com.instagram.android" />
+        <!-- 微信：视频号不是独立 App，但它的界面类名有固定前缀，可以单独拆出来统计 -->
+        <package android:name="com.tencent.mm" />
     </queries>
 
     <application

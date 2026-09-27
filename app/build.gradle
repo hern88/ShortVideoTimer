@@ -10,8 +10,8 @@ android {
         applicationId "com.example.shortvideotimer"
         minSdk 26            // Android 8.0 及以上（2017 年之后的手机基本都行）
         targetSdk 34
-        versionCode 1
-        versionName "0.1-mvp"
+        versionCode 2
+        versionName "0.2-mvp"
     }
 
     buildTypes {

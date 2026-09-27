@@ -108,7 +108,7 @@ public class MainActivity extends AppCompatActivity {
         StringBuilder builder = new StringBuilder();
 
         for (ShortVideoUsage.Item item : result.items) {
-            builder.append(ShortVideoUsage.displayName(item.packageName))
+            builder.append(item.label)
                    .append("    ")
                    .append(ShortVideoUsage.formatDuration(item.foregroundMs))
                    .append('\n');
@@ -122,7 +122,18 @@ public class MainActivity extends AppCompatActivity {
             tvDetail.setText(builder.toString().trim());
         }
 
-        // 调试信息：万一数字还是不对，靠它一眼看出问题出在哪
-        tvDebug.setText(result.debug);
+        // 调试信息：万一数字还是不对，靠它一眼看出问题出在哪。
+        // 开头带上版本号，方便确认手机上装的到底是哪一版。
+        tvDebug.setText("版本 " + appVersion() + "\n" + result.debug);
+    }
+
+    /** 读取本 App 的版本号（就是 app/build.gradle 里的 versionName） */
+    @SuppressWarnings("deprecation")
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "未知";
+        }
     }
 }

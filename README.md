@@ -141,10 +141,44 @@ https://github.com/你的用户名/ShortVideoTimer/releases/download/latest-apk/
 |---|---|
 | 改 App 名字 | `res/values/strings.xml` 里的 `app_name` |
 | 换主题色 | `res/values/colors.xml` 里的 `brand` 和 `brand_dark` |
-| 增加统计某个新 App | `ShortVideoUsage.java` 的 `APPS` 里加一行 `APPS.put("包名", "中文名")` |
-| 不统计某个 App | 把 `APPS` 里对应那行删掉 |
+| 增加统计某个独立 App | `ShortVideoUsage.java` 的 `static {}` 里加 `rule("包名", null, "中文名")` |
+| 统计某个 App 里的功能 | 加 `rule("包名", "界面类名前缀", "中文名")` |
+| 不统计某个 App | 把对应那行 `rule(...)` 删掉 |
 | 改界面排版 | `res/layout/activity_main.xml` |
 | 改授权引导的文案 | `res/values/strings.xml` 里的 `hint_need_permission` |
+
+### 特殊情况：短视频藏在别的 App 里（微信视频号）
+
+有些短视频**不是独立 App**，而是藏在别的 App 内部 —— 典型例子就是**微信视频号**。
+
+这种情况没法按包名统计，因为微信的包名是 `com.tencent.mm`，聊天、朋友圈也全在这个包里。
+
+**但系统的使用记录里还包含「界面类名」，所以可以用类名前缀把它单独拆出来：**
+
+```java
+// 只统计微信里「视频号」相关的界面，聊天和朋友圈不会被算进去
+rule("com.tencent.mm", "com.tencent.mm.plugin.finder.", "微信视频号");
+```
+
+实测微信 8.0.78（Android 16）的视频号界面，全部带 `plugin.finder.` 前缀：
+
+| 类名 | 对应界面 |
+|---|---|
+| `plugin.finder.ui.FinderHomeAffinityUI` | 视频号主页（刷视频那个） |
+| `plugin.finder.feed.ui.FinderProfileTimeLineUI` | 某人的视频号主页 |
+| `plugin.finder.feed.ui.FinderLiveVisitorAffinityUI` | 视频号直播 |
+| `plugin.finder.feed.ui.FinderTopicTimelineUI` | 话题页 |
+| `plugin.finder.ui.FinderSelfUI` | 我的视频号 |
+
+**已知限制**：视频号用小窗 / 浮窗播放时，前台界面不是 `plugin.finder.*`，这段时长抓不到。
+
+> 如果以后微信改了类名导致统计失效，可以用 adb 查看真实类名再更新前缀：
+>
+> ```
+> adb shell dumpsys usagestats | findstr finder
+> ```
+>
+> （`adb` 在 `%LOCALAPPDATA%\Android\platform-tools\adb.exe`）
 
 改完代码后：源代码管理 → 写提交信息 → `Ctrl+Enter` → `同步更改`，等 3~5 分钟就能在手机上装新版了。
 
