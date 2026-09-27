@@ -7,8 +7,6 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.util.List;
-
 /**
  * MVP 唯一的一个界面。
  *
@@ -24,6 +22,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvTotal;    // 大数字：今日总时长
     private TextView tvDetail;   // 卡片里的分项明细
     private TextView tvHint;     // 授权引导文字
+    private TextView tvDebug;    // 调试信息（定位问题用，稳定后可以删掉）
     private Button btnGrant;     // 「去开启权限」按钮
     private Button btnRefresh;   // 「刷新」按钮
 
@@ -35,6 +34,7 @@ public class MainActivity extends AppCompatActivity {
         tvTotal = findViewById(R.id.tv_total);
         tvDetail = findViewById(R.id.tv_detail);
         tvHint = findViewById(R.id.tv_hint);
+        tvDebug = findViewById(R.id.tv_debug);
         btnGrant = findViewById(R.id.btn_grant);
         btnRefresh = findViewById(R.id.btn_refresh);
 
@@ -78,13 +78,13 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final List<ShortVideoUsage.Item> items =
+                final ShortVideoUsage.Result result =
                         ShortVideoUsage.queryToday(MainActivity.this);
 
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        showResult(items);
+                        showResult(result);
                     }
                 });
             }
@@ -100,27 +100,29 @@ public class MainActivity extends AppCompatActivity {
         tvHint.setText(R.string.hint_need_permission);
 
         btnGrant.setVisibility(View.VISIBLE);
+        tvDebug.setText("");
     }
 
     /** 有权限时，把统计结果画到界面上 */
-    private void showResult(List<ShortVideoUsage.Item> items) {
-        long totalMs = 0;
+    private void showResult(ShortVideoUsage.Result result) {
         StringBuilder builder = new StringBuilder();
 
-        for (ShortVideoUsage.Item item : items) {
-            totalMs += item.foregroundMs;
+        for (ShortVideoUsage.Item item : result.items) {
             builder.append(ShortVideoUsage.displayName(item.packageName))
                    .append("    ")
                    .append(ShortVideoUsage.formatDuration(item.foregroundMs))
                    .append('\n');
         }
 
-        tvTotal.setText(ShortVideoUsage.formatDuration(totalMs));
+        tvTotal.setText(ShortVideoUsage.formatDuration(result.totalMs));
 
         if (builder.length() == 0) {
             tvDetail.setText(R.string.detail_no_usage);
         } else {
             tvDetail.setText(builder.toString().trim());
         }
+
+        // 调试信息：万一数字还是不对，靠它一眼看出问题出在哪
+        tvDebug.setText(result.debug);
     }
 }

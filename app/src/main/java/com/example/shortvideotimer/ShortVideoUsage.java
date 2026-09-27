@@ -1,6 +1,7 @@
 package com.example.shortvideotimer;
 
 import android.app.usage.UsageEvents;
+import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
 
@@ -9,28 +10,45 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 核心：统计「今天」各短视频 App 的前台使用时长。
  *
- * 为什么不用 UsageStatsManager.queryUsageStats()？
- *   它返回的是按「完整时间桶」聚合的数据，桶的边界通常不是自然日 0 点，
- *   所以当天的数据经常是空的或者不准 —— 这是新手最容易踩的坑。
+ * === 为什么不用 UsageStatsManager.queryUsageStats() ===
+ * 它返回的是按「完整时间桶」聚合的数据，桶的边界通常不是自然日 0 点，
+ * 当天数据经常是空的或者不准。所以这里读原始事件流 queryEvents()，
+ * 自己把时间一段段拼起来。
  *
- * 所以这里改成读原始事件流 queryEvents()，自己把时间一段段拼起来：
- *   收到 ACTIVITY_RESUMED  -> 记下开始时间
- *   收到 ACTIVITY_PAUSED   -> 结束时间 - 开始时间，累加
- *   收到息屏事件           -> 把所有还在计时的都结算掉（息屏不算使用）
+ * === 算法（状态机） ===
+ * 维护「哪些 Activity 正在前台」的集合，然后：
+ *   有目标 App 进入前台 -> 开始计时
+ *   它离开前台         -> 结算这一段
+ * 内部用「包名 -> (Activity类名 -> 重数)」而不是一个简单的计数器，
+ * 因为一个 App 可能同时有多个 Activity 在前台（App 内部切页面）。
+ * 用类名做键，重复的 RESUMED 事件不会把计数搞乱。
+ *
+ * === 踩过的坑（别改回去） ===
+ * 1. 绝对不能用「屏幕亮否」当闸门去过滤 RESUMED 事件。
+ *    小米等带息屏显示(AOD)的机型会多发 SCREEN_NON_INTERACTIVE，
+ *    一旦配对不上，闸门就会永久卡在 false，之后所有记录全部丢失，
+ *    表现就是「一直显示不到 1 分钟」。
+ *    解决：把 ACTIVITY_RESUMED 当作「屏幕一定亮着」的证据来纠正状态。
+ * 2. ACTIVITY_DESTROYED / END_OF_DAY / CONTINUE_PREVIOUS_DAY 在官方
+ *    SDK 里标了 @hide，拿不到，只能用数字字面量。
  */
 public final class ShortVideoUsage {
+
+    /** ACTIVITY_DESTROYED 被官方标为 @hide，公开 SDK 拿不到，只能写死它的值 */
+    private static final int EVENT_ACTIVITY_DESTROYED = 24;
 
     /**
      * 包名 -> 中文名。
      * 想加别的 App，在这里加一行就行；删掉一行就不会再统计它。
      */
-    private static final Map<String, String> APPS = new HashMap<>();
+    private static final Map<String, String> APPS = new LinkedHashMap<>();
 
     static {
         APPS.put("com.ss.android.ugc.aweme", "抖音");
@@ -60,7 +78,18 @@ public final class ShortVideoUsage {
             this.foregroundMs = foregroundMs;
         }
     }
+    /** 一次查询的完整结果：给用户看的时长 + 给开发者看的诊断信息 */
+    public static class Result {
+        public final List<Item> items;
+        public final long totalMs;
+        public final String debug;
 
+        Result(List<Item> items, long totalMs, String debug) {
+            this.items = items;
+            this.totalMs = totalMs;
+            this.debug = debug;
+        }
+    }
     /** 把包名翻译成中文名；没登记过的就直接显示包名 */
     public static String displayName(String packageName) {
         String name = APPS.get(packageName);
@@ -98,20 +127,35 @@ public final class ShortVideoUsage {
         return query(context, todayStart(), System.currentTimeMillis());
     }
 
+    /** 统计今天 0 点到现在 */
+    public static Result queryToday(Context context) {
+        return query(context, todayStart(), System.currentTimeMillis());
+    }
+
     /**
      * 统计 [startMs, endMs) 区间内的前台时长。
      *
-     * 这个方法会遍历几万条事件，不要在界面线程里调用，
-     * 要放到子线程（MainActivity 里已经这么做了）。
+     * 会遍历几万条事件，不要在界面线程里调用，要放到子线程
+     * （MainActivity 里已经这么做了）。
      */
-    public static List<Item> query(Context context, long startMs, long endMs) {
+    public static Result query(Context context, long startMs, long endMs) {
         UsageStatsManager usm =
                 (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
 
-        Map<String, Long> totalMs = new HashMap<>();      // 每个 App 的累计时长
-        Map<String, Integer> depth = new HashMap<>();     // 该 App 当前有几个界面在前台
-        Map<String, Long> startAt = new HashMap<>();      // 该 App 本次开始计时的时刻
+        Map<String, Long> totalMs = new HashMap<>();
+        // 包名 -> (Activity 类名 -> 该 Activity 在前台的重数)
+        Map<String, Map<String, Integer>> resumed = new HashMap<>();
+        // 包名 -> 最近一次进入前台的时刻（多窗口时用它决定算谁的）
+        Map<String, Long> lastResumeAt = new HashMap<>();
+
+        String activePkg = null;      // 当前正在计时的目标 App
+        long activeSince = startMs;   // 这段计时的起点
+
         boolean screenOn = true;
+        int eventCount = 0;
+        int resumedCount = 0;
+        int pausedCount = 0;
+        int stoppedCount = 0;
 
         if (usm != null) {
             UsageEvents events = usm.queryEvents(startMs, endMs);
@@ -119,84 +163,220 @@ public final class ShortVideoUsage {
 
             while (events != null && events.hasNextEvent()) {
                 events.getNextEvent(event);
+                eventCount++;
 
                 String pkg = event.getPackageName();
+                String cls = event.getClassName();
+                if (cls == null) {
+                    cls = "";
+                }
                 boolean isTarget = pkg != null && APPS.containsKey(pkg);
+                long ts = event.getTimeStamp();
 
                 switch (event.getEventType()) {
 
                     case UsageEvents.Event.ACTIVITY_RESUMED:
-                        // App 的一个界面来到前台。用计数器而不是直接覆盖开始时间，
-                        // 是因为 App 内部切换界面时也会触发，那样会重复计算。
-                        if (isTarget && screenOn) {
-                            int d = depth.containsKey(pkg) ? depth.get(pkg) : 0;
-                            if (d == 0) {
-                                startAt.put(pkg, event.getTimeStamp());
-                            }
-                            depth.put(pkg, d + 1);
+                        // 关键修复：只要有 Activity 回到前台，屏幕就必然是亮的。
+                        // 这样即使系统漏发了 SCREEN_INTERACTIVE，状态也能自动纠正，
+                        // 不会像以前那样永久卡住、把之后所有记录都丢掉。
+                        screenOn = true;
+                        if (isTarget) {
+                            resumedCount++;
+                            increase(resumed, pkg, cls);
+                            lastResumeAt.put(pkg, ts);
                         }
                         break;
 
                     case UsageEvents.Event.ACTIVITY_PAUSED:
-                    case UsageEvents.Event.ACTIVITY_STOPPED:
-                        // 界面离开前台。计数减到 0 才说明整个 App 退出了前台。
                         if (isTarget) {
-                            int d = (depth.containsKey(pkg) ? depth.get(pkg) : 0) - 1;
-                            if (d <= 0) {
-                                depth.put(pkg, 0);
-                                Long begin = startAt.remove(pkg);
-                                if (begin != null) {
-                                    add(totalMs, pkg, event.getTimeStamp() - begin);
-                                }
-                            } else {
-                                depth.put(pkg, d);
-                            }
+                            pausedCount++;
+                            decrease(resumed, pkg, cls);
+                        }
+                        break;
+
+                    case UsageEvents.Event.ACTIVITY_STOPPED:
+                        if (isTarget) {
+                            stoppedCount++;
+                            decrease(resumed, pkg, cls);
+                        }
+                        break;
+
+                    case EVENT_ACTIVITY_DESTROYED:
+                        if (isTarget) {
+                            decrease(resumed, pkg, cls);
                         }
                         break;
 
                     case UsageEvents.Event.SCREEN_NON_INTERACTIVE:
-                        // 息屏了，把所有还在计时的 App 结算掉：息屏不算"使用"
+                        // 息屏：安卓会暂停所有 Activity，所以直接清空前台集合，
+                        // 避免残留状态被误算。亮屏后系统会重新发 RESUMED。
                         screenOn = false;
-                        for (Map.Entry<String, Long> entry : startAt.entrySet()) {
-                            add(totalMs, entry.getKey(), event.getTimeStamp() - entry.getValue());
-                        }
-                        startAt.clear();
-                        depth.clear();
+                        resumed.clear();
+                        lastResumeAt.clear();
                         break;
 
                     case UsageEvents.Event.SCREEN_INTERACTIVE:
-                        // 亮屏了，后面的 RESUMED 事件会重新开始计时
                         screenOn = true;
+                        break;
+
+                    case UsageEvents.Event.DEVICE_SHUTDOWN:
+                    case UsageEvents.Event.DEVICE_STARTUP:
+                        // 关机/重启：之前所有「没配对的开始」都不可信，全部丢掉
+                        resumed.clear();
+                        lastResumeAt.clear();
+                        screenOn = (event.getEventType() == UsageEvents.Event.DEVICE_STARTUP);
                         break;
 
                     default:
                         // 其他事件（通知、切输入法、锁屏……）这里不关心
                         break;
                 }
+
+                // 每次事件之后重新判断：现在到底是哪个目标 App 在前台？
+                // 一旦切换，就把上一段结算掉。
+                String next = pickActive(screenOn, resumed, lastResumeAt);
+                boolean changed = (next == null) ? (activePkg != null) : !next.equals(activePkg);
+                if (changed) {
+                    if (activePkg != null && ts > activeSince) {
+                        add(totalMs, activePkg, ts - activeSince);
+                    }
+                    activePkg = next;
+                    activeSince = ts;
+                }
             }
         }
 
-        // 统计到"此刻"为止：如果某个 App 现在还在前台，
-        // 它没有 PAUSED 事件，需要手动补上从开始到 endMs 这一段。
-        if (screenOn) {
-            for (Map.Entry<String, Long> entry : startAt.entrySet()) {
-                add(totalMs, entry.getKey(), endMs - entry.getValue());
-            }
+        // 到「此刻」为止还挂在前台的，把最后一段补上
+        if (activePkg != null && endMs > activeSince) {
+            add(totalMs, activePkg, endMs - activeSince);
         }
 
-        List<Item> result = new ArrayList<>();
+        // ---- 汇总 ----
+        List<Item> items = new ArrayList<>();
+        long sum = 0;
         for (Map.Entry<String, Long> entry : totalMs.entrySet()) {
-            result.add(new Item(entry.getKey(), entry.getValue()));
+            items.add(new Item(entry.getKey(), entry.getValue()));
+            sum += entry.getValue();
         }
-
-        // 用时长的排前面
-        Collections.sort(result, new Comparator<Item>() {
+        Collections.sort(items, new Comparator<Item>() {
             @Override
             public int compare(Item a, Item b) {
                 return Long.compare(b.foregroundMs, a.foregroundMs);
             }
         });
-        return result;
+
+        // ---- 调试信息（定位问题用，稳定之后可以删掉）----
+        long sysMs = systemStatsMs(context, startMs, endMs);
+        StringBuilder dbg = new StringBuilder();
+        dbg.append("【调试信息】\n");
+        dbg.append("读取事件：").append(eventCount).append(" 条\n");
+        dbg.append("目标App：前台 ").append(resumedCount)
+           .append(" 次 / 暂停 ").append(pausedCount)
+           .append(" 次 / 停止 ").append(stoppedCount).append(" 次\n");
+        dbg.append("事件累计：").append(sum / 1000).append(" 秒\n");
+        dbg.append("系统统计：").append(sysMs / 1000).append(" 秒\n");
+        dbg.append("屏幕状态：").append(screenOn ? "亮" : "灭").append("\n");
+        dbg.append("未闭合会话：")
+           .append(activePkg == null ? "无" : displayName(activePkg));
+
+        return new Result(items, sum, dbg.toString());
+    }
+
+    /**
+     * 选出「此刻正在前台的目标 App」。
+     * 息屏时返回 null；多窗口时取最近一次进入前台的那个。
+     */
+    private static String pickActive(
+            boolean screenOn,
+            Map<String, Map<String, Integer>> resumed,
+            Map<String, Long> lastResumeAt) {
+
+        if (!screenOn) {
+            return null;
+        }
+        String best = null;
+        long bestTs = -1L;
+        for (Map.Entry<String, Map<String, Integer>> entry : resumed.entrySet()) {
+            if (!hasAnyResumed(entry.getValue())) {
+                continue;
+            }
+            Long t = lastResumeAt.get(entry.getKey());
+            long ts = (t == null ? 0L : t);
+            if (ts >= bestTs) {
+                bestTs = ts;
+                best = entry.getKey();
+            }
+        }
+        return best;
+    }
+
+    /** 这个包里还有 Activity 处于前台吗？ */
+    private static boolean hasAnyResumed(Map<String, Integer> byClass) {
+        if (byClass == null) {
+            return false;
+        }
+        for (Integer count : byClass.values()) {
+            if (count != null && count > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void increase(
+            Map<String, Map<String, Integer>> map, String pkg, String cls) {
+        Map<String, Integer> byClass = map.get(pkg);
+        if (byClass == null) {
+            byClass = new HashMap<>();
+            map.put(pkg, byClass);
+        }
+        Integer old = byClass.get(cls);
+        byClass.put(cls, (old == null ? 0 : old) + 1);
+    }
+
+    private static void decrease(
+            Map<String, Map<String, Integer>> map, String pkg, String cls) {
+        Map<String, Integer> byClass = map.get(pkg);
+        if (byClass == null) {
+            return;
+        }
+        Integer old = byClass.get(cls);
+        if (old == null) {
+            return;
+        }
+        if (old <= 1) {
+            byClass.remove(cls);
+        } else {
+            byClass.put(cls, old - 1);
+        }
+    }
+
+    /**
+     * 交叉验证用的系统统计值。
+     * 它是按「完整时间桶」聚合的，和我们自己算的不会完全一致，
+     * 只用来判断「到底是算法算错了，还是系统根本没记录」。
+     */
+    private static long systemStatsMs(Context context, long startMs, long endMs) {
+        UsageStatsManager usm =
+                (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) {
+            return 0L;
+        }
+        long sum = 0L;
+        try {
+            List<UsageStats> list =
+                    usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, endMs);
+            if (list != null) {
+                for (UsageStats stats : list) {
+                    if (stats != null && APPS.containsKey(stats.getPackageName())) {
+                        sum += stats.getTotalTimeInForeground();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 只是个诊断值，拿不到就算了
+        }
+        return sum;
     }
 
     /** 小工具：给某个 App 累加时长 */
